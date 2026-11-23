@@ -1,0 +1,13 @@
+# Core modules (standalone, tested by self_test.py)
+numpy>=1.24
+opencv-python>=4.8
+matplotlib>=3.7
+pandas>=2.0
+tqdm
+
+# Ultralytics YOLO26 integration (training / evaluation / export)
+ultralytics>=8.3.0        # YOLO26 line requires >= 2026.01 release
+
+# Edge benchmark on Jetson Orin Nano (Table 12)
+tensorrt>=8.6
+pycuda>=2022.1

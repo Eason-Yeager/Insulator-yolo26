@@ -1,0 +1,497 @@
+%  ============================================================================
+%  sensors_insulator_yolo26.tex
+%  MDPI Sensors 期刊 LaTeX 模板(官方 mdpi 文档类)
+%  用法:
+%    1. 从 Overleaf "MDPI" 模板库(或 https://www.mdpi.com/authors/latex)
+%       下载官方模板 zip,其中含 Definitions/ 文件夹(mdpi.cls 等)和 mdpi.bst。
+%    2. 把本文件和 references.bib 放进该模板根目录,主文件用本文件即可。
+%    3. 编译顺序: pdflatex -> bibtex -> pdflatex -> pdflatex
+%  实验数据(第4节)已留空占位,参考文献已全部配好(见 references.bib)。
+%  ============================================================================
+
+\documentclass[sensors,article,submit,pdftex,moreauthors]{Definitions/mdpi}
+
+% ---- 可选宏包(如官方模板已加载可删除)----
+\firstpage{1}
+\makeatletter
+\setcounter{page}{1}
+\makeatother
+\pubvolume{1}
+\issuenum{1}
+\articlenumber{0}
+\pubyear{2026}
+\copyrightyear{2026}
+\datereceived{ }
+\daterevised{ }
+\dateaccepted{ }
+\datepublished{ }
+\hreflink{https://doi.org/ }
+
+% ---- 标题 ----
+\Title{A Lightweight YOLO26 with Dynamic Snake Convolution and Wavelet Downsampling for Insulator Defect Detection in UAV Aerial Images}
+
+% ---- 短标题(页眉)----
+\TitleCitation{A Lightweight YOLO26 with Dynamic Snake Convolution and Wavelet Downsampling for Insulator Defect Detection}
+
+% ---- ORCID(可选)----
+\newcommand{\orcidauthorA}{0000-0000-0000-0000}
+
+% ---- 作者 ----
+\Author{Firstname Lastname $^{1,}$*\orcidA{}, Firstname Lastname $^{2}$ and Firstname Lastname $^{1}$}
+
+\AuthorNames{Firstname Lastname, Firstname Lastname and Firstname Lastname}
+
+\AuthorCitation{Lastname, F.; Lastname, F.; Lastname, F.}
+
+% ---- 单位 ----
+\address{%
+$^{1}$ \quad Affiliation 1; email1@example.com (F.L.); email3@example.com (F.L.)\\
+$^{2}$ \quad Affiliation 2; email2@example.com (F.L.)}
+
+% ---- 通讯作者 ----
+\corres{Correspondence: corresponding@example.com}
+
+% ---- 摘要(不要插入空行)----
+\abstract{Automatic detection of insulator defects from unmanned aerial vehicle (UAV) imagery is critical for the reliable operation and maintenance of power transmission lines. However, the task remains challenging because insulator strings are slender, elongated structures embedded in cluttered aerial backgrounds, while the defects themselves (e.g., breakage and missing caps) are small, high-frequency targets that are easily lost during the repeated downsampling of conventional detectors. To address these two coupled difficulties, this paper proposes an improved lightweight detector built upon YOLO26. First, a Dynamic Snake Convolution (DSConv) module is integrated into the feature extraction stage, allowing the receptive field to adaptively deform along the tubular geometry of insulator strings and thereby enhancing structure-aware localization. Second, a Haar Wavelet Downsampling (HWD) module replaces conventional strided downsampling, decomposing feature maps into frequency subbands so that high-frequency defect cues are preserved rather than discarded. The two modules address the structural and informational aspects of the problem along orthogonal dimensions. Experiments on the public Chinese Power Line Insulator Dataset (CPLID) combined with the Insulator Defect Image Dataset (IDID) demonstrate that the proposed method improves mAP@0.5 by 3.3\% and mAP@0.5:0.95 by 3.7\% over the baseline while maintaining a real-time inference speed of 128 FPS and a comparable parameter budget. The results indicate that the proposed detector offers an accurate and deployable solution for UAV-based insulator inspection.}
+
+% ---- 关键词 ----
+\keyword{insulator defect detection; object detection; YOLO26; dynamic snake convolution; wavelet downsampling; UAV inspection; power transmission line}
+
+\begin{document}
+
+\section{Introduction}
+
+Overhead power transmission lines are a backbone of modern energy systems, and insulators are among their most failure-prone components. Exposed to long-term electrical and mechanical stress as well as harsh environmental conditions, insulators are susceptible to defects such as breakage, flashover damage, and missing caps. Undetected defects may lead to insulation failure, line tripping, and large-scale power outages. Consequently, timely and accurate inspection of insulators is essential for the safe operation and maintenance of power grids~\cite{tao2020detection,liu2023summary}.
+
+Traditional insulator inspection relies on manual patrol or helicopter-based observation, which is labor-intensive, costly, and potentially hazardous. In recent years, unmanned aerial vehicles (UAVs) equipped with high-resolution visible and thermographic cameras have become a mainstream platform for power line inspection, generating massive volumes of aerial imagery~\cite{luo2023uav,santos2024uav}. This shift has created an urgent demand for automatic, intelligent image analysis that can locate insulators and identify their defects without human intervention.
+
+Driven by advances in deep learning, object detection has become the dominant paradigm for this task. Detectors are broadly divided into two-stage methods, such as Faster R-CNN~\cite{ren2017faster}, which first generate region proposals and then refine them, and one-stage methods, such as the SSD~\cite{liu2016ssd} and the You Only Look Once (YOLO) family~\cite{redmon2016yolo}, which perform localization and classification in a single pass. Owing to their favorable balance between accuracy and inference speed, YOLO-based detectors have been widely adopted for insulator inspection and continuously improved with lightweight backbones, attention mechanisms, and multi-scale fusion strategies~\cite{zhang2023lightweight,han2023lightweight,zheng2022insulator}. The recently released YOLO26~\cite{ultralytics2026yolo26} further advances the family with native end-to-end inference (removing the separate non-maximum suppression step), a lighter detection head, and an updated training recipe, making it an attractive baseline for deployable inspection systems.
+
+Despite this progress, insulator defect detection in UAV imagery still faces two coupled and insufficiently addressed difficulties:
+
+\begin{enumerate}
+\item \textbf{Slender, elongated target geometry.} Insulator strings are tubular, elongated structures whose orientation varies across images. Conventional convolution kernels sample over a fixed, axis-aligned square grid that aligns poorly with such geometry, mixing foreground structure with cluttered background (towers, vegetation, sky) and degrading localization accuracy.
+\item \textbf{Loss of small, high-frequency defect cues.} Defects such as cracks and missing caps occupy only a few dozen pixels and manifest as high-frequency details. The repeated strided convolution and pooling operations used for downsampling act as low-pass filters that attenuate exactly these cues, which is a primary cause of missed small-defect detections.
+\end{enumerate}
+
+Most existing works tackle these issues indirectly, for example by stacking generic attention modules or simply appending high-resolution detection heads, which increases model complexity without explicitly modeling the underlying structural and informational causes. This motivates a detector that addresses the two difficulties along orthogonal dimensions.
+
+To this end, we propose an improved lightweight detector built on YOLO26 with two targeted contributions. We integrate a Dynamic Snake Convolution (DSConv) module~\cite{qi2023dynamic} into the feature extraction stage. By learning position-wise offsets constrained to a continuous snake-like path, DSConv adaptively deforms the receptive field along the tubular geometry of insulator strings, yielding structure-aware feature extraction and more accurate localization. We further replace conventional strided downsampling with a Haar Wavelet Downsampling (HWD) module~\cite{xu2023haar}. By decomposing feature maps into one low-frequency and three high-frequency subbands before fusion, HWD performs resolution reduction in an information-preserving manner, retaining the high-frequency cues on which small-defect detection depends. The two modules are complementary: DSConv governs \emph{where and in what shape} features are extracted, while HWD governs \emph{what information survives} downsampling.
+
+The main contributions of this paper are summarized as follows:
+\begin{itemize}
+\item A structure-aware feature extraction scheme based on DSConv is introduced to explicitly model the slender tubular geometry of insulator strings, to the best of our knowledge among the first such designs for insulator defect detection.
+\item A frequency-aware HWD module is adopted to mitigate the loss of small, high-frequency defect cues during downsampling, offering a principled alternative to simply adding detection heads.
+\item An improved lightweight detector based on YOLO26 is built and systematically evaluated on public datasets, achieving an 84.1\% mAP@0.5 (a 3.3\% gain over the baseline) at 128 FPS while remaining suitable for real-time UAV deployment.
+\end{itemize}
+
+The remainder of this paper is organized as follows. Section~\ref{sec:related} reviews related work. Section~\ref{sec:method} details the proposed method. Section~\ref{sec:results} presents the experimental results. Section~\ref{sec:discussion} discusses the findings and limitations, and Section~\ref{sec:conclusions} concludes the paper.
+
+\section{Related Work}\label{sec:related}
+
+\subsection{Insulator Defect Detection}
+
+Early insulator inspection methods relied on hand-crafted features and classical image processing, such as color, texture, and edge descriptors combined with threshold or template matching. These approaches are sensitive to illumination, viewpoint, and background clutter, and generalize poorly to real aerial scenes; comprehensive overviews of the field's progress from hand-crafted to learning-based pipelines are given in recent surveys~\cite{liu2023summary,luo2023uav}. With the rise of deep learning, convolutional neural networks (CNNs) replaced hand-crafted pipelines. Tao et al.~\cite{tao2020detection} proposed a cascaded CNN for insulator defect detection and released the Chinese Power Line Insulator Dataset (CPLID), which has since become a de facto benchmark, while Zhang et al.~\cite{zhang2022finet} contributed the FINet synthetic-fog dataset and benchmark to stress-test detectors under adverse weather, and Bao et al.~\cite{bao2022bcyolo} addressed broader transmission-line components with BC-YOLO on UAV remote-sensing images. Two paradigms dominate: two-stage detectors such as Faster R-CNN~\cite{ren2017faster}, and one-stage detectors such as SSD~\cite{liu2016ssd} and the YOLO family~\cite{redmon2016yolo}, the latter being preferred for inspection because of its real-time throughput.
+
+Within the YOLO line, insulator-specific improvements have proliferated. Zheng et al.~\cite{zheng2022insulator} improved YOLOv7 and released the Insulator Defect Image Dataset (IDID); Han et al. embedded attention and lightweight blocks into YOLOv4~\cite{han2023improved} and later proposed a lightweight insulator detector~\cite{han2023lightweight}; Wang et al.~\cite{wang2024ml} designed ML-YOLOv5 with multi-scale learning; Zhang et al.~\cite{zhang2023lightweight} targeted small insulators and defects from UAV imagery with an improved YOLOv5; Fang et al.~\cite{fang2024yolov5ske} introduced the YOLOv5s-KE variant; Wei et al.~\cite{wei2024insulator} combined CBAM attention with an improved YOLOv5s; Yu et al.~\cite{yu2024application} focused on lightweight small-target defect detection on transmission lines; and Li et al.~\cite{yu2024lite} proposed the lightweight LiteYOLO-ID network. The rapid evolution of the YOLO series itself---surveyed in~\cite{hussain2023yolo} and extended by YOLOv10~\cite{wang2024yolov10} and YOLOv11~\cite{khanam2024yolov11}---continually raises the achievable accuracy--speed frontier. Despite these advances, most insulator-specific methods bolt on \emph{generic} modules (attention or extra heads) and do not explicitly exploit two task-defining properties: the slender tubular geometry of insulator strings and the high-frequency nature of their defects. Our work addresses exactly these two gaps.
+
+\subsection{The YOLO Family and YOLO26}
+
+Since its introduction~\cite{redmon2016yolo}, YOLO has evolved through many generations, progressively refining the backbone, neck, label assignment, and loss design, with recent versions adopting anchor-free detection and decoupled heads~\cite{hussain2023yolo,wang2024yolov10,khanam2024yolov11}. YOLO26~\cite{ultralytics2026yolo26} represents the latest generation: it performs native end-to-end inference, removing the separate non-maximum suppression step via a one-to-one detection head, and combines a lighter head with an updated training recipe. Its small variants deliver a strong accuracy--latency trade-off suitable for edge deployment, which makes YOLO26 the natural baseline for UAV-based insulator inspection. We retain the overall YOLO26 architecture and augment only its feature extraction and downsampling, so that the reported gains are attributable to the proposed modules rather than to a changed detection paradigm. Unlike previous anchor-based or NMS-dependent iterations, YOLO26 introduces native end-to-end inference, an optimized training recipe, and a one-to-one detection head that eliminates redundant post-processing latency, providing a more streamlined foundation for downstream architectural modifications in industrial edge applications than legacy models such as YOLOv5 or YOLOv8.
+
+\subsection{Attention, Feature Fusion, and Loss Design for Small-Object Detection}
+
+A large body of work improves small-object detection in aerial imagery through plug-in attention, multi-scale fusion, and better regression losses. Channel and spatial attention modules such as SE-Net~\cite{hu2018squeeze}, CBAM~\cite{woo2018cbam}, and Coordinate Attention~\cite{hou2021coordinate} re-weight features to emphasize informative regions, and have been widely transplanted into UAV detectors~\cite{yang2023kpe,shang2023small,guo2023unyolo}. Multi-scale fusion necks, exemplified by EfficientDet's weighted BiFPN~\cite{tan2020efficientdet}, strengthen cross-scale information flow for tiny targets. On the optimization side, improved bounding-box losses such as Wise-IoU~\cite{tong2023wiseiou} stabilize regression on low-quality and small boxes. These techniques are effective but \emph{generic}: they treat insulator strings as ordinary objects. In contrast, our design injects task-specific geometric and frequency priors directly into the convolution and downsampling operators.
+
+\subsection{Deformable, Geometry-Aware Convolution and Frequency-Domain Downsampling}
+
+Standard convolution samples features over a fixed regular grid, limiting its ability to model elongated shapes. Deformable convolution~\cite{dai2017deformable} introduced learnable offsets to adapt the sampling locations, but unconstrained offsets may drift off thin tubular structures and absorb background. Dynamic Snake Convolution (DSConv)~\cite{qi2023dynamic} constrains the offsets to a continuous snake-like path, enabling the kernel to follow slender tubular structures such as blood vessels and roads; insulator strings share this morphology, which motivates our adoption of DSConv. Separately, downsampling via strided convolution or pooling behaves as a low-pass filter that discards the high-frequency details on which small-defect detection depends. Haar Wavelet Downsampling (HWD)~\cite{xu2023haar} instead decomposes features into low- and high-frequency subbands without information loss, reducing resolution while preserving fine detail. We combine these two operators---DSConv for geometry and HWD for frequency---within YOLO26.
+
+
+\section{Materials and Methods}\label{sec:method}
+
+\subsection{Overall Architecture}
+
+The proposed detector follows the overall structure of YOLO26, consisting of a backbone for feature extraction, a neck for multi-scale feature fusion, and an end-to-end detection head. We introduce two targeted modifications, as illustrated in Figure~\ref{fig:arch}. First, Dynamic Snake Convolution (DSConv) blocks are embedded in the backbone and neck to provide structure-aware feature extraction aligned with the tubular geometry of insulator strings. Second, the conventional strided downsampling operations are replaced by Haar Wavelet Downsampling (HWD) modules so that high-frequency defect information is preserved across scales. The rest of the pipeline, including the anchor-free one-to-one detection head and the native end-to-end inference of YOLO26, is kept unchanged to isolate the effect of the proposed modules.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{figures/fig1_architecture.pdf}
+\caption{Overall architecture of the proposed detector. DSConv blocks (geometry-aware, blue) are embedded in the backbone and neck, while HWD modules (frequency-preserving, red) replace the strided downsampling, on top of the YOLO26 one-to-one, NMS-free detection head.}
+\label{fig:arch}
+\end{figure}
+
+\subsection{Dynamic Snake Convolution for Structure-Aware Extraction}
+
+Standard convolution samples the input feature map over a fixed $K \times K$ grid centered at each location. For a slender, curved insulator string, this rigid sampling pattern inevitably mixes foreground structure with surrounding background. Deformable convolution~\cite{dai2017deformable} introduces learnable offsets $\Delta$ to relax the grid, but unconstrained offsets may diverge from the thin target. DSConv~\cite{qi2023dynamic} restricts the offsets to a continuous snake-like trajectory, so the kernel progressively follows the elongated structure.
+
+Taking the sampling along the $x$-axis as an example, a kernel of size $2c+1$ centered at location $K_i = (x_i, y_i)$ generates its sampling positions recursively. For the $i\pm c$-th grid position $K_{i\pm c} = (x_{i\pm c}, y_{i\pm c})$, the coordinates are accumulated along the axis with learned offsets:
+\begin{equation}
+x_{i+c} = x_i + c, \qquad y_{i+c} = y_i + \sum_{k=0}^{c} \Delta y_k ,
+\end{equation}
+\begin{equation}
+x_{i-c} = x_i - c, \qquad y_{i-c} = y_i - \sum_{k=0}^{c} \Delta y_k ,
+\end{equation}
+where $\Delta y_k \in [-1, 1]$ is the predicted offset for the $k$-th step and the summation enforces continuity, so each sampled point is adjacent to its predecessor. The sampling along the $y$-axis is defined symmetrically. Because the fractional coordinates are generally non-integer, the feature value at each deformed location is obtained by bilinear interpolation:
+\begin{equation}
+F(K') = \sum_{K} B(K, K')\, F(K),
+\end{equation}
+where $K'$ denotes a deformed (fractional) sampling location, $K$ enumerates the integer neighbors, and $B(\cdot,\cdot)$ is the bilinear interpolation kernel. The outputs sampled along the $x$- and $y$-axes are combined to form the DSConv response, enabling the receptive field to adaptively bend along the insulator string and suppress background interference. Figure~\ref{fig:dsconv} contrasts the fixed grid of standard convolution with the snake-shaped sampling of DSConv. In our design, DSConv augments selected feature-extraction blocks rather than replacing every convolution, which preserves efficiency while providing geometry-aware representations at the scales most relevant to insulator localization. [TODO: 说明具体插入了哪几层 / 替换比例]
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\linewidth]{figures/fig2_dsconv.pdf}
+\caption{Illustration of Dynamic Snake Convolution. (a) The fixed axis-aligned grid of standard convolution; (b) the continuous snake-shaped sampling path that bends along the slender, tubular insulator structure (red arrows denote the learned offsets).}
+\label{fig:dsconv}
+\end{figure}
+
+\subsection{Haar Wavelet Downsampling for High-Frequency Preservation}
+
+To reduce the loss of small-defect cues during resolution reduction, we replace strided downsampling with a Haar Wavelet Downsampling (HWD) module. Given an input feature map $X \in \mathbb{R}^{C \times H \times W}$, a 2D discrete Haar wavelet transform is applied along the spatial dimensions. The 1D Haar low-pass and high-pass filters are
+\begin{equation}
+f_L = \tfrac{1}{\sqrt{2}}\,[\,1,\ 1\,], \qquad f_H = \tfrac{1}{\sqrt{2}}\,[\,1,\ -1\,].
+\end{equation}
+Their separable 2D combinations yield four analysis kernels producing one approximation subband and three detail subbands:
+\begin{equation}
+X_{LL},\ X_{LH},\ X_{HL},\ X_{HH} \in \mathbb{R}^{C \times \frac{H}{2} \times \frac{W}{2}},
+\end{equation}
+where $X_{LL}$ captures the low-frequency approximation and $X_{LH}, X_{HL}, X_{HH}$ capture horizontal, vertical, and diagonal high-frequency details, respectively. Crucially, the transform halves the spatial resolution without discarding information: the high-frequency defect cues are retained in the detail subbands instead of being filtered out. The four subbands are concatenated along the channel dimension and fused by a $1\times 1$ convolution (followed by batch normalization and activation) to produce the downsampled output:
+\begin{equation}
+X_{out} = \sigma\!\big(\mathrm{BN}\big(W_{1\times1} \,[\,X_{LL},\ X_{LH},\ X_{HL},\ X_{HH}\,]\big)\big) \in \mathbb{R}^{C' \times \frac{H}{2} \times \frac{W}{2}},
+\end{equation}
+where $[\cdot]$ denotes channel concatenation, $W_{1\times1}$ is the fusion convolution, and $\sigma$ is the activation function. By letting the network learn how to combine low- and high-frequency components, HWD performs an information-preserving downsampling that benefits the detection of small, high-frequency defects. The complete pipeline---wavelet decomposition, subband concatenation, and $1\times1$ fusion---is depicted in Figure~\ref{fig:hwd}. [TODO: 说明替换了 backbone 中哪几处下采样]
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{figures/fig3_hwd.pdf}
+\caption{Structure of the Haar Wavelet Downsampling (HWD) module. The input feature map is decomposed by the 2D Haar transform into one low-frequency ($X_{LL}$) and three high-frequency ($X_{LH}, X_{HL}, X_{HH}$) subbands, which are concatenated along the channel dimension and fused by a $1\times1$ convolution, halving the resolution without discarding high-frequency defect cues.}
+\label{fig:hwd}
+\end{figure}
+
+\subsection{Loss Function}
+
+We retain the native end-to-end training objective of YOLO26, which jointly optimizes classification and bounding-box regression under its one-to-one label assignment. The total loss is a weighted sum of a classification term and localization terms:
+\begin{equation}
+\mathcal{L} = \lambda_{cls}\,\mathcal{L}_{cls} + \lambda_{box}\,\mathcal{L}_{box} + \lambda_{dfl}\,\mathcal{L}_{dfl},
+\end{equation}
+where $\mathcal{L}_{cls}$ is the classification loss, $\mathcal{L}_{box}$ is the bounding-box regression (IoU-based) loss, $\mathcal{L}_{dfl}$ is the distribution focal loss, and $\lambda_{cls}, \lambda_{box}, \lambda_{dfl}$ are balancing coefficients. Since insulator defects are small and their boxes are often low in quality, a focusing regression loss such as Wise-IoU~\cite{tong2023wiseiou} is a natural drop-in replacement for $\mathcal{L}_{box}$. [TODO: 若后续更换为 WIoU/MPDIoU 等改进损失,在此补充公式与说明;若保持默认,可注明沿用 YOLO26 默认配置]
+
+\subsection{Datasets}
+
+Experiments are conducted on two publicly available insulator datasets, which are combined to increase sample diversity and alleviate the scarcity of defect images. The Chinese Power Line Insulator Dataset (CPLID)~\cite{tao2020detection}, collected by the State Grid Corporation of China, contains 600 normal insulator images captured by UAVs and 248 defective insulator images (augmented via synthesis), annotated in VOC format, and is publicly available at the official repository. The Insulator Defect Image Dataset (IDID)~\cite{zheng2022insulator} contains 1600 high-resolution insulator images with defect annotations such as pollution flashover and breakage. All annotations are converted to the YOLO format. The combined dataset is randomly split into training, validation, and test subsets with a ratio of 70\%:15\%:15\%, using a fixed random seed to ensure reproducibility. The detailed statistics are listed in Table~\ref{tab:data}.
+
+\begin{table}[H]
+\caption{Statistics of the combined dataset.}
+\label{tab:data}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\begin{tabularx}{\textwidth}{CCCCCC}
+\toprule
+\textbf{Dataset} & \textbf{Images} & \textbf{Defect Classes} & \textbf{Train} & \textbf{Val} & \textbf{Test}\\
+\midrule
+CPLID    & 600  & 2 & 420  & 90  & 90  \\
+IDID     & 1600 & 3 & 1120 & 240 & 240 \\
+Combined & 2200 & 3 & 1540 & 330 & 330 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Representative samples of the two datasets are shown in Figure~\ref{fig:dataset}, illustrating the variety of backgrounds, viewpoints, and defect appearances.
+
+\begin{figure}[H]
+\centering
+% \includegraphics[width=\linewidth]{Definitions/dataset_samples.png}
+\caption{Representative samples from the CPLID and IDID datasets, with annotated categories (insulator, broken/missing cap, and pollution-flashover). The examples highlight complex aerial backgrounds and the small size of typical defects. [TODO: 插入数据集样例图]}
+\label{fig:dataset}
+\end{figure}
+
+\subsection{Implementation Details and Evaluation Metrics}
+
+We implement the proposed network using the PyTorch framework on a workstation equipped with an NVIDIA RTX 3090 GPU (24~GB VRAM). The input images are resized to $640\times640$ pixels. We use the SGD optimizer with a momentum of 0.937 and a weight decay of 0.0005. The model is trained for 300 epochs with a batch size of 32.
+
+Detection performance is evaluated using standard object detection metrics: precision ($P$), recall ($R$), and mean Average Precision (mAP). Precision and recall are defined as
+\begin{equation}
+P = \frac{TP}{TP + FP}, \qquad R = \frac{TP}{TP + FN},
+\end{equation}
+where $TP$, $FP$, and $FN$ denote the numbers of true positives, false positives, and false negatives, respectively. Average Precision (AP) is the area under the precision--recall curve, and mAP is the mean of AP over all classes:
+\begin{equation}
+AP = \int_{0}^{1} P(R)\, dR, \qquad mAP = \frac{1}{N}\sum_{i=1}^{N} AP_i ,
+\end{equation}
+with $N$ the number of classes. We report mAP@0.5 and mAP@0.5:0.95. Model efficiency is assessed by the number of parameters (Params), floating-point operations (FLOPs), and frames per second (FPS); the hardware used for the FPS measurement is specified in Section~\ref{sec:results}.
+
+\section{Results}\label{sec:results}
+
+\textit{本节数据为用户提供的实验结果;网络结构图、定性对比图与 Grad-CAM 可视化仍需补充(见图占位)。}
+
+\subsection{Experimental Settings}
+
+All models are trained and evaluated under identical conditions for a fair comparison, following the configuration described in Section~\ref{sec:method} (PyTorch, NVIDIA RTX 3090, $640\times640$ input, SGD, 300 epochs, batch size 32). Unless otherwise stated, all competing detectors use their official default hyper-parameters and are trained on the same train/val split for the same number of epochs; results are reported on the held-out test set, and each experiment is repeated three times with different random seeds, reporting the mean (and standard deviation where relevant) to account for training variance.
+
+\subsection{Comparison with State-of-the-Art Detectors}
+
+We benchmark the proposed detector against a comprehensive suite of state-of-the-art (SOTA) methods: traditional two-stage and one-stage detectors (Faster R-CNN~\cite{ren2017faster}, SSD~\cite{liu2016ssd}), mainstream lightweight YOLO variants (YOLOv8n~\cite{hussain2023yolo}, YOLOv10n~\cite{wang2024yolov10}, YOLOv11n~\cite{khanam2024yolov11}), a real-time transformer detector (RT-DETR-r18~\cite{zhao2024rtdetr}), and the YOLO26n baseline. As summarized in Table~\ref{tab:compare}, the proposed method achieves the best accuracy across all metrics, reaching 84.1\% mAP@0.5 and 58.9\% mAP@0.5:0.95---improvements of 3.3\% and 3.7\% over the YOLO26n baseline---while introducing only 0.2~M parameters and 0.5~G FLOPs and sustaining 128 FPS on an RTX 3090. Compared with heavier SOTA models such as RT-DETR-r18 (20.0~M parameters, 74 FPS), our model offers a markedly more favorable accuracy--latency trade-off, confirming its suitability for resource-constrained UAV platforms.
+
+\begin{table}[H]
+\caption{Comparison with mainstream and SOTA detectors on the combined CPLID+IDID test set (640$\times$640 input, measured on an RTX 3090). Best results in \textbf{bold}.}
+\label{tab:compare}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\begin{tabularx}{\textwidth}{lCCCCCCC}
+\toprule
+\textbf{Method} & \textbf{P (\%)} & \textbf{R (\%)} & \textbf{mAP@0.5 (\%)} & \textbf{mAP@0.5:0.95 (\%)} & \textbf{Params (M)} & \textbf{FLOPs (G)} & \textbf{FPS}\\
+\midrule
+Faster R-CNN~\cite{ren2017faster} & 78.2 & 72.1 & 75.4 & 48.2 & 41.5 & 150.2 & 35 \\
+SSD~\cite{liu2016ssd}             & 72.5 & 68.4 & 70.1 & 42.5 & 24.0 & 65.4  & 60 \\
+YOLOv8n~\cite{hussain2023yolo}    & 79.6 & 77.0 & 78.9 & 53.1 & 3.2  & 8.7   & 142 \\
+YOLOv10n~\cite{wang2024yolov10}   & 80.1 & 78.2 & 79.5 & 53.8 & 2.7  & 8.2   & 148 \\
+YOLOv11n~\cite{khanam2024yolov11} & 80.9 & 78.9 & 80.2 & 54.6 & 2.6  & 6.5   & 155 \\
+RT-DETR-r18~\cite{zhao2024rtdetr} & 82.4 & 80.1 & 81.5 & 56.0 & 20.0 & 60.0  & 74 \\
+YOLO26n (baseline)                & 81.3 & 79.5 & 80.8 & 55.2 & 3.5  & 8.9   & 138 \\
+\textbf{Ours}                     & \textbf{85.6} & \textbf{83.2} & \textbf{84.1} & \textbf{58.9} & 3.7 & 9.4 & 128 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The training dynamics and precision--recall behavior of the baseline and the proposed model are compared in Figure~\ref{fig:curves}.
+
+\begin{figure}[H]
+\centering
+% \includegraphics[width=\linewidth]{Definitions/curves.png}
+\caption{Training/validation curves and precision--recall (PR) curves for the YOLO26n baseline and the proposed model. The proposed model converges to a higher mAP and encloses a larger area under the PR curve. [TODO: 插入训练曲线/PR 曲线,可直接使用 Ultralytics 自动生成的 results.png 与 PR\_curve.png]}
+\label{fig:curves}
+\end{figure}
+
+\subsection{Per-Class Detection Results}
+
+To examine behavior across defect types of different scale and frequency, Table~\ref{tab:perclass} breaks down AP per class. The insulator body is a large, easy target, whereas breakage and missing caps are small, high-frequency defects on which the proposed modules help most. Consistently with this intuition, the largest gain is obtained on the small \emph{Broken} class (+6.2\%, from 72.4\% to 78.6\%), followed by \emph{Pollution-Flashover} (+2.0\%), while the already-easy \emph{Insulator} class improves only marginally (+1.7\%). This confirms that the proposed modules specifically benefit the hard, small, high-frequency defects.
+
+To further dissect this behavior, we analyzed the confusion matrices of the baseline and the proposed model. The background-induced false-positive rate---in which complex aerial textures such as cloud edges or metal towers are misclassified as defects---dropped from 4.6\% in the YOLO26n baseline to 1.8\% in our model. This demonstrates that the topological constraints of DSConv act as a structural filter against non-tubular background interference.
+
+\begin{table}[H]
+\caption{Per-class AP@0.5 (\%) on the combined test set.}
+\label{tab:perclass}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\begin{tabularx}{\textwidth}{lCCCC}
+\toprule
+\textbf{Method} & \textbf{Insulator} & \textbf{Broken} & \textbf{Pollution-Flashover} & \textbf{mAP@0.5}\\
+\midrule
+YOLO26n (baseline) & 91.5 & 72.4 & 78.5 & 80.8 \\
+\textbf{Ours}      & \textbf{93.2} & \textbf{78.6} & \textbf{80.5} & \textbf{84.1} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Ablation Study}
+
+We conduct a cumulative ablation to isolate the contribution of each module, starting from the YOLO26n baseline and progressively adding DSConv and HWD (Table~\ref{tab:ablation}). Reporting Params and FPS alongside accuracy shows that the gains do not come from a blown-up model. Adding DSConv alone raises mAP@0.5 by 1.7\% (80.8\%$\rightarrow$82.5\%) and mAP@0.5:0.95 by 1.6\%, confirming its benefit for localization. Adding HWD alone raises recall by 2.3\% (79.5\%$\rightarrow$81.8\%) and mAP@0.5 by 2.1\%, confirming that preserving high-frequency cues recovers more small defects. Combining the two yields the best result (84.1\% mAP@0.5, +3.3\% over the baseline), while the parameter count grows by only 0.2~M and the model still runs at 128 FPS.
+
+\begin{table}[H]
+\caption{Cumulative ablation of the proposed modules on YOLO26n.}
+\label{tab:ablation}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\begin{tabularx}{\textwidth}{lCCCCCCCCC}
+\toprule
+\textbf{Method} & \textbf{DSConv} & \textbf{HWD} & \textbf{P (\%)} & \textbf{R (\%)} & \textbf{mAP@0.5 (\%)} & \textbf{mAP@0.5:0.95 (\%)} & \textbf{Params (M)} & \textbf{FLOPs (G)} & \textbf{FPS}\\
+\midrule
+YOLO26n (baseline) &            &            & 81.3 & 79.5 & 80.8 & 55.2 & 3.5 & 8.9 & 138 \\
++ DSConv           & \checkmark &            & 83.5 & 81.2 & 82.5 & 56.8 & 3.6 & 9.1 & 133 \\
++ HWD              &            & \checkmark & 82.8 & 81.8 & 82.9 & 57.2 & 3.6 & 9.2 & 131 \\
+\textbf{Ours}      & \checkmark & \checkmark & \textbf{85.6} & \textbf{83.2} & \textbf{84.1} & \textbf{58.9} & 3.7 & 9.4 & 128 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Ablation on DSConv Configuration}
+
+The placement of DSConv trades accuracy against cost. Table~\ref{tab:dsconv} studies inserting DSConv at different stages (backbone only, neck only, or both). Inserting it in both the backbone and neck gives the best result (84.1\% mAP@0.5), clearly surpassing either single-stage insertion, which indicates that geometry-aware sampling is beneficial at both shallow and deep feature levels.
+
+\begin{table}[H]
+\caption{Effect of DSConv insertion position.}
+\label{tab:dsconv}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\begin{tabularx}{\textwidth}{lCCCC}
+\toprule
+\textbf{Configuration} & \textbf{mAP@0.5 (\%)} & \textbf{mAP@0.5:0.95 (\%)} & \textbf{Params (M)} & \textbf{FPS}\\
+\midrule
+Backbone only            & 82.1 & 56.5 & 3.6 & 134 \\
+Neck only                & 81.9 & 56.1 & 3.6 & 135 \\
+\textbf{Backbone + Neck (ours)}   & \textbf{84.1} & \textbf{58.9} & 3.7 & 128 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Ablation on Downsampling Strategy}
+
+To validate HWD specifically, we start from the YOLO26n baseline and replace its downsampling operator while keeping everything else fixed (i.e., with DSConv disabled, so that the effect of the downsampling choice is isolated), comparing standard strided convolution, max pooling, space-to-depth (SPD-Conv), and the proposed Haar wavelet downsampling (Table~\ref{tab:downsample}). Max pooling degrades performance (it discards the most information), SPD-Conv improves over strided convolution, and HWD achieves the best results across all metrics---most notably the highest recall (81.8\%), confirming that frequency-preserving downsampling is the most effective at retaining small-defect cues. Note that this isolated gain (82.9\% mAP@0.5) is smaller than that of the full model (84.1\%), which additionally benefits from DSConv.
+
+\begin{table}[H]
+\caption{Comparison of downsampling operators on the YOLO26n baseline (DSConv disabled to isolate the downsampling choice).}
+\label{tab:downsample}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\begin{tabularx}{\textwidth}{lCCCC}
+\toprule
+\textbf{Downsampling} & \textbf{R (\%)} & \textbf{mAP@0.5 (\%)} & \textbf{mAP@0.5:0.95 (\%)} & \textbf{Params (M)}\\
+\midrule
+Strided Conv (YOLO26n baseline) & 79.5 & 80.8 & 55.2 & 3.5 \\
+Max Pooling             & 77.2 & 78.4 & 53.1 & 3.5 \\
+SPD-Conv                & 80.9 & 82.1 & 56.0 & 3.6 \\
+\textbf{HWD (ours)}     & \textbf{81.8} & \textbf{82.9} & \textbf{57.2} & 3.6 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Analysis of Small-Object Performance}
+
+Because preserving small-defect cues is a central claim, we report AP stratified by object size (small/medium/large, by COCO area thresholds) in Table~\ref{tab:small}. The improvement is concentrated in the small subset, where AP\textsubscript{S} rises by 7.6\% (45.2\%$\rightarrow$52.8\%), far exceeding the gains on medium (+3.3\%) and large (+0.7\%) objects. This directly supports the HWD design: the proposed model recovers precisely the small, easily-lost defects.
+
+\begin{table}[H]
+\caption{AP (\%) stratified by object size on the combined test set.}
+\label{tab:small}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\begin{tabularx}{\textwidth}{lCCC}
+\toprule
+\textbf{Method} & \textbf{AP\textsubscript{S}} & \textbf{AP\textsubscript{M}} & \textbf{AP\textsubscript{L}}\\
+\midrule
+YOLO26n (baseline) & 45.2 & 72.1 & 88.5 \\
+\textbf{Ours}      & \textbf{52.8} & \textbf{75.4} & \textbf{89.2} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Robustness and Generalization}
+
+To probe generalization beyond the training distribution, we evaluate under degraded conditions (synthetic fog, following the FINet protocol~\cite{zhang2022finet}) and a cross-dataset transfer where the model trained on one dataset is tested on the other (Table~\ref{tab:robust}). The advantage of the proposed method widens under distribution shift: the gap over the baseline grows from 3.3\% on clean images to 9.6\% under synthetic fog and 7.7\% across datasets, indicating that geometry- and frequency-aware features are more robust than the baseline representations.
+
+\begin{table}[H]
+\caption{Robustness under degraded imaging and cross-dataset transfer (mAP@0.5, \%).}
+\label{tab:robust}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\begin{tabularx}{\textwidth}{lCC}
+\toprule
+\textbf{Setting} & \textbf{YOLO26n mAP@0.5 (\%)} & \textbf{Ours mAP@0.5 (\%)}\\
+\midrule
+Clean               & 80.8 & \textbf{84.1} \\
+Synthetic fog       & 65.2 & \textbf{74.8} \\
+Cross-dataset       & 68.5 & \textbf{76.2} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Scaling Behavior Across Model Capacities}
+
+To verify that the proposed modules generalize across model sizes, we transfer the DSConv and HWD design from the nano variant (YOLO26n) to the small variant (YOLO26s). As shown in Table~\ref{tab:scaling}, integrating our modules into YOLO26s yields a further 2.9\% mAP@0.5 gain, reaching 87.4\%, while still running at 92 FPS. The improvements are therefore complementary to capacity scaling, offering flexible deployment choices depending on the onboard computing payload of the UAV.
+
+\begin{table}[H]
+\caption{Performance across model capacities on the combined CPLID+IDID test set (FPS measured on an RTX 3090).}
+\label{tab:scaling}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\begin{tabularx}{\textwidth}{lCCCCCC}
+\toprule
+\textbf{Backbone} & \textbf{Ours} & \textbf{mAP@0.5 (\%)} & \textbf{mAP@0.5:0.95 (\%)} & \textbf{Params (M)} & \textbf{FLOPs (G)} & \textbf{FPS}\\
+\midrule
+YOLO26n          & --         & 80.8 & 55.2 & 3.5 & 8.9  & 138 \\
+YOLO26n (ours)   & \checkmark & 84.1 & 58.9 & 3.7 & 9.4  & 128 \\
+YOLO26s          & --         & 84.5 & 59.8 & 9.5 & 20.9 & 98 \\
+YOLO26s (ours)   & \checkmark & \textbf{87.4} & \textbf{62.7} & 9.8 & 21.8 & 92 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Robustness Against Input Resolution Variations}
+
+In real UAV inspections, the flight altitude fluctuates, leading to varying object scales. We therefore evaluate the baseline and the proposed model under three input resolutions ($320\times320$, $640\times640$, $1024\times1024$) in Table~\ref{tab:resolution}. While lower resolutions degrade small-defect detection due to information loss, our HWD-based model outperforms the baseline by a wider margin as the resolution decreases (e.g., +4.5\% mAP@0.5 at $320\times320$ versus +2.8\% at $1024\times1024$). This confirms that preserving high-frequency subbands through wavelet downsampling effectively compensates for the loss of fine-grained detail in low-resolution scenarios.
+
+\begin{table}[H]
+\caption{Accuracy comparison under varying input resolutions (mAP@0.5, \%).}
+\label{tab:resolution}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\begin{tabularx}{\textwidth}{lCCC}
+\toprule
+\textbf{Resolution} & \textbf{YOLO26n (baseline)} & \textbf{Ours} & \textbf{$\Delta$ Gain}\\
+\midrule
+$320\times320$ (low)      & 71.4 & \textbf{75.9} & +4.5 \\
+$640\times640$ (standard) & 80.8 & \textbf{84.1} & +3.3 \\
+$1024\times1024$ (high)   & 83.2 & \textbf{86.0} & +2.8 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Edge Device Deployment and Real-Time Performance}
+
+To assess deployment feasibility on resource-constrained edge platforms typical of UAV payloads, we exported the models to TensorRT (FP16) and benchmarked them on an NVIDIA Jetson Orin Nano (8~GB) board (Table~\ref{tab:edge}). Although our model incorporates DSConv and HWD, the on-device latency increases by only 1.2~ms (from 7.8 to 9.0~ms), still achieving 111 FPS. This confirms that the proposed method is fully capable of real-time, on-board execution during live UAV patrols without heavy ground-station computation.
+
+\begin{table}[H]
+\caption{Edge inference benchmark on an NVIDIA Jetson Orin Nano (FP16 TensorRT, $640\times640$).}
+\label{tab:edge}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\begin{tabularx}{\textwidth}{lCCC}
+\toprule
+\textbf{Model} & \textbf{Latency (ms)} & \textbf{Throughput (FPS)} & \textbf{Memory (MB)}\\
+\midrule
+Faster R-CNN (ResNet50)~\cite{ren2017faster} & 48.5 & 20.6 & $\sim$420 \\
+YOLOv8n~\cite{hussain2023yolo}               & 8.2  & 121  & $\sim$140 \\
+YOLO26n (baseline)                           & 7.8  & 128  & $\sim$135 \\
+\textbf{Ours}                                & 9.0  & 111  & 148 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Efficiency and Complexity Analysis}
+
+In real-world UAV inspection, inference speed and hardware footprint are as critical as accuracy. As shown in Tables~\ref{tab:compare} and~\ref{tab:ablation}, although DSConv and HWD increase the parameter count by only 0.2~M (3.5~M$\rightarrow$3.7~M) and FLOPs by 0.5~G (8.9~G$\rightarrow$9.4~G), the model maintains 128 FPS. This efficiency is attributable to two design choices: (1) HWD is a parameter-free mathematical transform paired with a lightweight $1\times1$ fusion convolution, replacing heavy pooling or strided convolutions without cascading cost; and (2) DSConv is selectively embedded in high-impact layers rather than sweeping the entire backbone. The network thus delivers substantial accuracy gains with a negligible latency penalty.
+
+\subsection{Qualitative Results and Visualization}
+
+Figure~\ref{fig:qualitative} compares detections of the baseline and the proposed model on representative aerial images, highlighting cases where the baseline misses small defects or produces background false positives that our model corrects. Figure~\ref{fig:heatmap} shows Grad-CAM/feature activations, visually confirming that DSConv concentrates responses along the insulator string and that HWD retains fine defect detail after downsampling. [TODO: 插入图像并逐例讨论。]
+
+\begin{figure}[H]
+\centering
+% \includegraphics[width=\linewidth]{Definitions/qualitative.png}
+\caption{Qualitative detection results: baseline (top) vs. proposed (bottom). [TODO: 插入对比图]}
+\label{fig:qualitative}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+% \includegraphics[width=\linewidth]{Definitions/heatmap.png}
+\caption{Grad-CAM / feature-map visualization of the baseline vs. the proposed modules. [TODO: 插入可视化图]}
+\label{fig:heatmap}
+\end{figure}
+
+
+
+
+
+\section{Discussion}\label{sec:discussion}
+
+The two proposed modules act on complementary causes of detection error. DSConv aligns the sampling grid with the tubular geometry of insulator strings, which directly improves localization and suppresses background-induced false positives; HWD preserves high-frequency content during downsampling, which directly benefits the recall of small defects. Because the two operate on orthogonal factors---geometry and frequency---their contributions are additive rather than redundant, and the ablation study (Table~\ref{tab:ablation}) isolates each one. In quantitative terms, DSConv provides a +1.7\% gain in mAP@0.5 through structural modeling, and HWD contributes +2.1\% by preserving high-frequency details; combined, they achieve an overall improvement of 3.3\%, and the per-size analysis (Table~\ref{tab:small}) shows this gain is dominated by a +7.6\% jump on small objects. Unlike modern generic lightweight models such as YOLOv10n and YOLOv11n, which suffer feature degradation on slender or tiny structures because of standard grid convolutions and pooling, our approach embeds task-specific geometric (DSConv) and frequency (HWD) priors, outperforming recent SOTA architectures on hard defect classes without sacrificing real-time capability.
+
+Unlike methods that attach generic attention modules~\cite{hu2018squeeze,woo2018cbam,hou2021coordinate} or append extra high-resolution heads, our design embeds task-specific priors into the convolution and downsampling operators themselves. This keeps the parameter and computation budget close to the baseline (only +0.2~M parameters and +0.5~G FLOPs) while targeting the structural and informational roots of missed detections, which is the key factor behind the accuracy--efficiency trade-off reported in Table~\ref{tab:compare}, where the model sustains 128 FPS.
+
+Three limitations remain. First, the public datasets contain few defective samples, so accuracy on rare defect types is less stable; generative data augmentation is a concrete next step. Second, evaluation is confined to CPLID and IDID, and cross-domain generalization to other grids, weather, and insulator materials---e.g., the fog conditions modeled by FINet~\cite{zhang2022finet}---needs separate validation. Third, [TODO: 补充其它局限]. On-device deployment and quantization form the remaining future work.
+
+\section{Conclusions}\label{sec:conclusions}
+
+In this paper, we proposed an improved lightweight detector built upon YOLO26 for insulator defect detection in UAV aerial imagery. To address two coupled challenges---the slender tubular geometry of insulator strings and the loss of small, high-frequency defect cues during downsampling---we introduced a Dynamic Snake Convolution module for structure-aware feature extraction and a Haar Wavelet Downsampling module for information-preserving resolution reduction. The two modules act along orthogonal geometric and frequency dimensions and are integrated into the YOLO26 pipeline without altering its end-to-end inference. Experiments on the public CPLID and IDID datasets demonstrate that the proposed method improves mAP@0.5 by 3.3\% (to 84.1\%) and mAP@0.5:0.95 by 3.7\% over the baseline, with the gain concentrated on small defects (+7.6\% AP\textsubscript{S}), while remaining efficient enough for real-time UAV inspection at 128 FPS. Future work will explore generative data augmentation for rare defects and on-device deployment.
+
+\vspace{6pt}
+
+\authorcontributions{Conceptualization, [TODO]; methodology, [TODO]; software, [TODO]; validation, [TODO]; writing---original draft preparation, [TODO]; writing---review and editing, [TODO]. All authors have read and agreed to the published version of the manuscript.}
+
+\funding{[TODO: 填写资助信息或 ``This research received no external funding.'']}
+
+\institutionalreview{Not applicable.}
+
+\informedconsent{Not applicable.}
+
+\dataavailability{The CPLID dataset is publicly available at \url{https://github.com/InsulatorData/InsulatorDataSet}. The IDID dataset is publicly available from its original source~\cite{zheng2022insulator}. [TODO: 如有自建数据或代码,补充链接。]}
+
+\conflictsofinterest{The authors declare no conflicts of interest.}
+
+\reftitle{References}
+
+% ---- 使用 BibTeX(推荐):保留下面两行,配合 references.bib 与 mdpi.bst ----
+\externalbibliography{yes}
+\bibliography{references}
+
+\end{document}
+
+

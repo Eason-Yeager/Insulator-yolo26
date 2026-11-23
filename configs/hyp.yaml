@@ -1,0 +1,25 @@
+# YOLO26n training hyper-parameters — paper Section 3.8
+# (these are passed as CLI flags in train.py; kept here for reference)
+lr0: 0.01
+lrf: 0.01
+momentum: 0.937
+weight_decay: 0.0005
+warmup_epochs: 3.0
+warmup_momentum: 0.8
+box: 7.5
+cls: 0.5
+dfl: 1.5
+close_mosaic: 10        # Mosaic disabled for the final 10 epochs
+hsv_h: 0.015
+hsv_s: 0.7
+hsv_v: 0.4
+degrees: 0.0
+translate: 0.1
+scale: 0.5
+shear: 0.0
+perspective: 0.0
+flipud: 0.0
+fliplr: 0.5
+mosaic: 1.0
+mixup: 0.1
+copy_paste: 0.0
